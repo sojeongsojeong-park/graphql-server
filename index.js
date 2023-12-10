@@ -3,7 +3,9 @@ const { ApolloServer } = require("@apollo/server");
 const { startStandaloneServer } = require("@apollo/server/standalone");
 const { InMemoryLRUCache } = require("@apollo/utils.keyvaluecache");
 const responseCachePlugin = require("@apollo/server-plugin-response-cache");
-require("dotenv").config();
+const dotenv = require("dotenv");
+
+dotenv.config();
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.KEY;
@@ -21,17 +23,43 @@ directive @cacheControl (
   scope: CacheControlScope
 ) on FIELD_DEFINITION | OBJECT | INTERFACE
 
+input filterMemberQueryInput {
+  no:String
+  name: String
+  gender: String
+  birthday: String
+  roleId: String
+  profileImg: String
+  jobStartYear: String
+  jobTitleId:String
+  joinedYear: String
+  jobTitle: String
+  }
+
+input registerMemberMutationInput {
+  no:String!
+  name: String!
+  gender: String!
+  birthday: String!
+  roleId: String!
+  profileImg: String
+  jobStartYear: String!
+  jobTitleId:String!
+  joinedYear: String!
+  jobTitle: String!
+  }
+
   type Role {
   id: Int
   name: String
   }
 
-  type JobGrade {
+  type JobTitle {
     id: Int
     name: String
   }
 
-  type Member{
+  type Member {
     no: String
     name: String
     role: Role @cacheControl(maxAge:600)
@@ -40,7 +68,7 @@ directive @cacheControl (
     birthday: String
     jobStartYear: String
     joinedYear: String
-    jobGrade: JobGrade @cacheControl(maxAge:600)
+    jobTitle: JobTitle @cacheControl(maxAge:600)
     
   }
 
@@ -50,11 +78,11 @@ directive @cacheControl (
 
   type Query {
     members: [Member] @cacheControl(maxAge:600)
-    filterByRoleMembers(roleId:String!):[Member]
+    filteredMembers(filteredMemberInfo:filterMemberQueryInput):[Member]
   }
   
   type Mutation {
-    registerMember( no:String!, name: String!, gender: String!, birthday: String!, roleId: String!, profileImg: String, jobStartYear: String!, jobTitleId:String! ): MutationResult
+    registerMember(registerInfo:registerMemberMutationInput): MutationResult
   }
 `;
 
@@ -65,13 +93,30 @@ const resolvers = {
         .from("Member")
         .select("*");
 
+      console.log("membvers", membersError);
       return members;
     },
-    filterByRoleMembers: async (_parent, args, _context, info) => {
-      const { data: filteredMembers, error: filteredMembersError } =
-        await supabase.from("Member").select("*").eq("roleId", args.roleId);
+    filteredMembers: async (_parent, args, _context, info) => {
+      const { data: members, error: membersError } = await supabase
+        .from("Member")
+        .select("*");
 
-      return filteredMembers;
+      console.log("error", membersError);
+
+      const filterInfo = args.filteredMemberInfo;
+
+      let result = members;
+
+      const filterFn = (key, value) => {
+        result = result.filter((member) => member[`${key}`] === value);
+      };
+
+      for (const key in filterInfo) {
+        console.log(key, filterInfo[key], result);
+        filterFn(key, filterInfo[key]);
+      }
+
+      return result;
     },
   },
   Member: {
@@ -84,7 +129,7 @@ const resolvers = {
 
       return roles.find((role) => role.id === parent.roleId);
     },
-    jobGrade: async (parent) => {
+    jobTitle: async (parent) => {
       const { data: jobTitles, error: jobTitlesError } = await supabase
         .from("JobTitle")
         .select("*");
@@ -95,20 +140,21 @@ const resolvers = {
   Mutation: {
     registerMember: async (_parent, args) => {
       try {
+        const input = args.registerInfo;
         const { data, error } = await supabase
           .from("Member")
           .insert([
             {
-              no: args.no,
-              name: args.name,
-              gender: args.gender,
-              birthday: args.birthday,
-              roleId: args.roleId,
+              no: input.no,
+              name: input.name,
+              gender: input.gender,
+              birthday: input.birthday,
+              roleId: input.roleId,
               profileImg:
-                args.profileImg ??
+                input.profileImg ??
                 "https://images.unsplash.com/photo-1592194996308-7b43878e84a6?q=80&w=2574&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-              jobStartYear: args.jobStartYear,
-              jobTitleId: args.jobTitle,
+              jobStartYear: input.jobStartYear,
+              jobTitleId: input.jobTitle,
             },
           ])
           .select();
